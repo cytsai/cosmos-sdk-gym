@@ -11,40 +11,47 @@ class CosmosSDKEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
     def __init__(self, sdk_path="", sdk_config="", verbose=False):
+        self._seed = 42
         self.sdk_path = sdk_path
         self.sdk_config = sdk_config
         self.verbose = verbose
         self.process = None
         self.action_pipe = None
         self.action_bkup = None
-        self.state = None
         self.action_space = spaces.Box(0.0, 1.0, (1,), np.float32)
-        self._seed = 42
         #self.observation_space = spaces.MultiDiscrete
-        #self.reset()
 
     def _parse_output(self):
         state = ""
+        reward = 0.0
         done = False
-        fail = False
-        coverage = 0.0
-        while True: #process.poll() is None:
+        while True:
             line = self.process.stdout.readline().decode("utf-8").strip()
-            if self.verbose and line.startswith(("STATE", "ACTION", "PASS", "FAIL", "coverage")):
-               print(line)
-            if line.startswith("STATE"):
-                state = list(map(int, line.lstrip("STATE").split()))
+            if self.verbose and line.startswith(("COVERAGE", "STATE", "ACTION", "PASS", "FAIL")):
+                print(line)
+            if line.startswith("COVERAGE"):
+                coverage = float(line.lstrip("COVERAGE "))
+                assert coverage >= self._coverage
+                reward = (coverage - self._coverage)
+                self._coverage = coverage
+            elif line.startswith("STATE"):
+                state = list(map(int, line.lstrip("STATE ").split()))
                 break
             elif line.startswith("PASS"):
                 done = True
+                break
             elif line.startswith("FAIL"):
                 done = True
-                fail = True
-            elif line.startswith("coverage"):
-                coverage = float(re.findall("(\d*(\.\d+)?%)", line)[0][0][:-1]) / 100.0
+                reward += 1.0
                 break
-        reward = fail + coverage
-        return state, done, reward
+            #elif line.startswith("coverage"):
+            #    coverage = float(re.findall("(\d*(\.\d+)?%)", line)[0][0][:-1]) / 100.0
+        return state, reward, done
+
+    def _write_result(self, fail):
+        self.action_bkup.write(self.sdk_config + '\n')
+        self.action_bkup.write("FAIL\n" if fail else "PASS\n")
+        self.action_bkup.write(str(self._coverage) + '\n')
 
     def seed(self, seed=None):
         self.action_space.seed(seed)
@@ -52,48 +59,52 @@ class CosmosSDKEnv(gym.Env):
         return [self._seed]
 
     def close(self):
-        if self.action_pipe: # is not None:
+        if self.action_pipe:
             self.action_pipe.close()
             os.remove(self.action_pipe.name)
             self.action_pipe = None
-        if self.action_bkup: # is not None:
+        if self.action_bkup:
             self.action_bkup.close()
-            # TODO: remove according to results?
             self.action_bkup = None
-        if self.process: # is not None:
+        if self.process:
             #while self.process.poll() is None:
             #    self.process.stdout.readline()
             self.process.terminate()
             self.process = None
 
     def reset(self):
+        # 1. close old guide files
         self.close()
-        # 
+        # 2. prepare new guide files
         fp = os.path.join(os.getcwd(), "guide")
         fn = uuid.uuid4().hex
         os.makedirs(fp, exist_ok=True)
         self.action_pipe = os.path.join(fp, fn+".pipe")
         self.action_bkup = os.path.join(fp, fn+".bkup")
         os.mkfifo(self.action_pipe)
-        #
+        # 3. launch simulation
         args  = "go test ./simapp/ -run TestFullAppSimulation -Enabled -Commit -v -cover -coverpkg=./... ".split()
         args += self.sdk_config.split() + [f"-Seed={self._seed}", f"-Guide={self.action_pipe}"]
         self.process = subprocess.Popen(args, cwd=self.sdk_path, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        # 
+        # 4. open new guide files
         self.action_pipe = open(self.action_pipe, "w")
         self.action_bkup = open(self.action_bkup, "w")
-        # 
-        self.state, done, _ = self._parse_output()
+        # 5. get initial state
+        self._coverage = 0.0
+        self.state, _, done = self._parse_output()
         assert not done
         return np.array(self.state)
 
     def step(self, action):
         assert 0.0 <= action < 1.0
-        action = str(int(self.state[0] * action)) + '\n'
+        action = int(self.state[0] * action) if self.state[0] > 0 else action
+        action = str(action) + '\n'
         self.action_pipe.write(action)
         self.action_bkup.write(action)
         self.action_pipe.flush()
-        self.state, done, reward = self._parse_output()
+        self.state, reward, done = self._parse_output()
+        if done:
+            self._write_result(reward > 1.0)
         return self.state, reward, done, {}
 
     def render(self, mode='human'):
