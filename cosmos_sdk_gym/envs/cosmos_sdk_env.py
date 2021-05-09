@@ -1,11 +1,18 @@
 import os
-import re
 import subprocess
 import uuid
 import numpy as np
+from collections import defaultdict
 import gym
 from gym import spaces
 from gym.utils import seeding
+
+
+class statedict(defaultdict):
+    def __missing__(self, key):
+        self[key] = index = len(self)
+        return index
+
 
 class CosmosSDKEnv(gym.Env):
     metadata = {'render.modes': ['human']}
@@ -20,6 +27,7 @@ class CosmosSDKEnv(gym.Env):
         self.action_bkup = None
         self.action_space = spaces.Box(0.0, 1.0, (1,), np.float32)
         #self.observation_space = spaces.MultiDiscrete
+        self.statedict = statedict()
 
     def _parse_output(self):
         state = ""
@@ -34,8 +42,11 @@ class CosmosSDKEnv(gym.Env):
                 assert coverage >= self._coverage
                 reward = (coverage - self._coverage)
                 self._coverage = coverage
+            elif line.startswith("ACTION"):
+                assert line.lstrip("ACTION ") == self._action
             elif line.startswith("STATE"):
-                state = list(map(int, line.lstrip("STATE ").split()))
+                self._range, state = line.lstrip("STATE ").split()
+                self._range, state = int(self._range), self.statedict[state] # + self._range]
                 break
             elif line.startswith("PASS"):
                 done = True
@@ -97,10 +108,10 @@ class CosmosSDKEnv(gym.Env):
 
     def step(self, action):
         assert 0.0 <= action < 1.0
-        action = int(self.state[0] * action) if self.state[0] > 0 else action
-        action = str(action) + '\n'
-        self.action_pipe.write(action)
-        self.action_bkup.write(action)
+        self._action = str(int(self._range * action) if self._range > 0 else action)
+        # assert action < range
+        self.action_pipe.write(self._action + '\n')
+        self.action_bkup.write(self._action + '\n')
         self.action_pipe.flush()
         self.state, reward, done = self._parse_output()
         if done:
