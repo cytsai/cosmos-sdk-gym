@@ -38,17 +38,20 @@ class CosmosSDKEnv(gym.Env):
     dtype = np.float32
     action_max = np.nextafter(dtype(1.0), dtype(0.0))
 
-    def __init__(self, env_config={"sdk_path":"", "sdk_config":"", "verbose":False}):
+
+    def __init__(self, env_config={}):
+        _env_config = {"sdk_path":"/home/cytsai/research/icf/cosmos-sdk", "sdk_config":"-NumBlocks=2 -BlockSize=100", "verbose":False}
+        _env_config.update(env_config)
         self._seed = 42
-        self.sdk_path = env_config["sdk_path"]
-        self.sdk_config = env_config["sdk_config"]
-        self.verbose = env_config["verbose"]
+        self.sdk_path = _env_config["sdk_path"]
+        self.sdk_config = _env_config["sdk_config"]
+        self.verbose = _env_config["verbose"]
         self.process = None
         self.action_pipe = None
-        self.action_bkup = None
+        self.action_data = None
         self.action_space = spaces.Box(0.0, self.action_max, (1,), self.dtype)
         self.observation_space = spaces.Discrete(128)
-        self.statedict = statedict(verbose=env_config["verbose"])
+        self.statedict = statedict(verbose=_env_config["verbose"])
         atexit.register(lambda: self.close())
 
     def _parse_output(self, collect_reward=True):
@@ -77,14 +80,12 @@ class CosmosSDKEnv(gym.Env):
                 done = True
                 reward += 1.0
                 break
-            #elif line.startswith("coverage"):
-            #    coverage = float(re.findall("(\d*(\.\d+)?%)", line)[0][0][:-1]) / 100.0
         return state, reward, done
 
     def _write_result(self, fail):
-        self.action_bkup.write(self.sdk_config + '\n')
-        self.action_bkup.write("FAIL\n" if fail else "PASS\n")
-        self.action_bkup.write(str(self._coverage) + '\n')
+        self.action_data.write(self.sdk_config + '\n')
+        self.action_data.write("FAIL\n" if fail else "PASS\n")
+        self.action_data.write(str(self._coverage) + '\n')
 
     def seed(self, seed=None):
         self.action_space.seed(seed)
@@ -96,12 +97,10 @@ class CosmosSDKEnv(gym.Env):
             self.action_pipe.close()
             os.remove(self.action_pipe.name)
             self.action_pipe = None
-        if self.action_bkup:
-            self.action_bkup.close()
-            self.action_bkup = None
+        if self.action_data:
+            self.action_data.close()
+            self.action_data = None
         if self.process:
-            #while self.process.poll() is None:
-            #    self.process.stdout.readline()
             self.process.terminate()
             self.process = None
 
@@ -113,20 +112,33 @@ class CosmosSDKEnv(gym.Env):
         fn = uuid.uuid4().hex
         os.makedirs(fp, exist_ok=True)
         self.action_pipe = os.path.join(fp, fn+".pipe")
-        self.action_bkup = os.path.join(fp, fn+".bkup")
+        self.action_data = os.path.join(fp, fn+".data")
         os.mkfifo(self.action_pipe)
         # 3. launch simulation
         args  = "go test ./simapp/ -run TestFullAppSimulation -Enabled -Commit -v -cover -coverpkg=./... ".split()
         args += self.sdk_config.split() + [f"-Seed={self._seed}", f"-Guide={self.action_pipe}"]
-        self.process = subprocess.Popen(args, cwd=self.sdk_path, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        self.process = subprocess.Popen(args, cwd=self.sdk_path, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=0)
         # 4. open new guide files
         self.action_pipe = open(self.action_pipe, "w")
-        self.action_bkup = open(self.action_bkup, "w")
+        self.action_data = open(self.action_data, "w")
         # 5. get initial state
         self._coverage = 0.0
         self.state, _, done = self._parse_output(collect_reward=False)
         assert not done
         return self.state
+
+    def _step(self, line):
+        self._action = line
+        self.action_pipe.write(line)
+        self.action_data.write(line)
+        self.action_pipe.flush()
+        ### self.action_data.flush() ###
+        self.state, reward, done = self._parse_output()
+        if done:
+            self._write_result(reward > 1.0)
+            if reward > 1.0:
+                reward -= 1.0
+        return self.state, reward, done, {}
 
     def step(self, action):
         action = action[0]
@@ -135,16 +147,28 @@ class CosmosSDKEnv(gym.Env):
             assert 0 <= action < self._range
         else:
             assert 0.0 <= action < 1.0
-        self._action = str(action) + '\n'
-        self.action_pipe.write(self._action)
-        self.action_bkup.write(self._action)
-        self.action_pipe.flush()
-        self.state, reward, done = self._parse_output()
-        if done:
-            self._write_result(reward > 1.0)
-            if reward > 1.0:
-                reward -= 1.0
-        return self.state, reward, done, {}
+        return self._step(str(action) + '\n')
 
     def render(self, mode='human'):
         print(self.state)
+
+
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) > 1:
+        guide = open(sys.argv[1])
+    else:
+        guide = None
+
+    env = CosmosSDKEnv({"verbose": True})
+    env.reset()
+    while True:
+        if guide:
+            line = guide.readline()
+            state, reward, done, _ = env._step(line)
+        else:
+            action = env.action_space.sample()
+            state, reward, done, _ = env.step(action)
+        if done:
+            break
+    env.close()
