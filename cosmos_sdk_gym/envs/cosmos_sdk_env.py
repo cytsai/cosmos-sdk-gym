@@ -60,7 +60,7 @@ class ReadQueue():
         self.thread = threading.Thread(target=_readline, args=(source, self.queue), daemon=True)
         self.thread.start()
 
-    def readline(self, timeout=2):
+    def readline(self, timeout=5):
         try:
             line = self.queue.get(timeout=timeout)
         except:
@@ -95,7 +95,7 @@ class CosmosSDKEnv(gym.Env):
         result = ""
         while True:
             line = self.readqueue.readline()
-            if self.verbose and line.startswith(("COVERAGE", "STATE", "ACTION", "PASS", "FAIL", "TIMEOUT")):
+            if self.verbose and line.startswith(("COVERAGE", "STATE", "ACTION", "PASS", "FAIL", "TIMEOUT", "panic")):
                 print(line)
             if line.startswith("COVERAGE") and collect_reward:
                 coverage = float(line.lstrip("COVERAGE "))
@@ -111,11 +111,16 @@ class CosmosSDKEnv(gym.Env):
             elif line.startswith(("PASS", "FAIL", "TIMEOUT")):
                 result = line.split()[0]
                 break
+            elif line.startswith("panic") and not self._panic:
+                self._panic = line
         return state, reward, result
 
     def _write_result(self, result):
-        self.action_data.write(' '.join(self.process.args) + '\n')
+        self.action_data.write("=" * 80 + '\n')
+        self.action_data.write(' '.join(self.process.args).replace(".pipe", ".data") + '\n')
         self.action_data.write("COVERAGE " + str(self._coverage) + '\n')
+        if self._panic:
+            self.action_data.write(self._panic + '\n')
         self.action_data.write(result + '\n')
 
     def seed(self, seed=None):
@@ -157,6 +162,7 @@ class CosmosSDKEnv(gym.Env):
         # 5. get initial state
         self.readqueue.reset(self.process.stdout)
         self._coverage = 0.0
+        self._panic = ""
         self.state, _, result = self._parse_output(collect_reward=False)
         assert not result
         return self.state
