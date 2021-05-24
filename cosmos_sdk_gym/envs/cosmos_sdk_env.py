@@ -1,71 +1,12 @@
 import os
 import subprocess
-import threading
-import queue
-import atexit
 import uuid
-from collections import defaultdict
-import json
+import atexit
 import numpy as np
 import gym
 from gym import spaces
 from gym.utils import seeding
-
-
-class StateDict(defaultdict):
-    def __init__(self, fn="statedict.json", verbose=True):
-        self.fn = fn
-        self.verbose = verbose
-        self.update(self.load())
-
-    def __missing__(self, state):
-        if self.verbose:
-            print("NEW STATE", state)
-        # assert self.load() == self
-        self[state] = index = len(self)
-        with open(self.fn, 'w') as f:
-            json.dump(self, f, indent=2)
-        return index
-
-    def load(self):
-        try:
-            with open(self.fn, 'r') as f:
-                return json.load(f)
-        except:
-            return {}
-
-
-class ReadQueue():
-    def __init__(self):
-        self.queue = None
-        self.thread = None
-
-    def close(self):
-        if self.queue:
-            del self.queue
-            self.queue = None
-        if self.thread:
-            self.thread.join()
-            self.thread = None
-
-    def reset(self, source):
-        def _readline(source, queue):
-            try:
-                while True:
-                    line = source.readline().decode("utf-8").strip()
-                    queue.put(line)
-            except:
-                pass
-        self.queue = queue.Queue()
-        self.thread = threading.Thread(target=_readline, args=(source, self.queue), daemon=True)
-        self.thread.start()
-
-    def readline(self, timeout=5):
-        try:
-            line = self.queue.get(timeout=timeout)
-        except:
-            line = "TIMEOUT"
-        return line
+from utils import StateDict, ReadQueue
 
 
 class CosmosSDKEnv(gym.Env):
@@ -84,7 +25,7 @@ class CosmosSDKEnv(gym.Env):
         self.action_pipe = None
         self.action_data = None
         self.action_space = spaces.Box(0.0, self.action_max, (1,), self.dtype)
-        self.observation_space = spaces.Discrete(128)
+        self.observation_space = spaces.Discrete(256)
         self.statedict = StateDict()
         self.readqueue = ReadQueue()
         atexit.register(lambda: self.close())
@@ -102,12 +43,12 @@ class CosmosSDKEnv(gym.Env):
                 assert coverage >= self._coverage
                 reward = (coverage - self._coverage)
                 self._coverage = coverage
-            elif line.startswith("ACTION"):
-                assert eval(line.lstrip("ACTION ")) == eval(self._action[:-1])
             elif line.startswith("STATE"):
                 self._range, state = line.lstrip("STATE ").split()
                 self._range, state = int(self._range), self.statedict[state] # + self._range]
                 break
+            elif line.startswith("ACTION"):
+                assert eval(line.lstrip("ACTION ")) == eval(self._action[:-1])
             elif line.startswith(("PASS", "FAIL", "TIMEOUT")):
                 result = line.split()[0]
                 break
@@ -119,9 +60,7 @@ class CosmosSDKEnv(gym.Env):
         self.action_data.write("=" * 80 + '\n')
         self.action_data.write(' '.join(self.process.args).replace(".pipe", ".data") + '\n')
         self.action_data.write("COVERAGE " + str(self._coverage) + '\n')
-        if self._panic:
-            self.action_data.write(self._panic + '\n')
-        self.action_data.write(result + '\n')
+        self.action_data.write(result + ' ' + self._panic + '\n')
 
     def seed(self, seed=None):
         self.action_space.seed(seed)
@@ -129,6 +68,7 @@ class CosmosSDKEnv(gym.Env):
         return [self._seed]
 
     def close(self):
+        self.readqueue.close()
         if self.action_pipe:
             self.action_pipe.close()
             os.remove(self.action_pipe.name)
@@ -137,10 +77,8 @@ class CosmosSDKEnv(gym.Env):
             self.action_data.close()
             self.action_data = None
         if self.process:
-            self.process.stdout.close()
             self.process.terminate()
             self.process = None
-        self.readqueue.close()
 
     def reset(self):
         # 1. close old guide files
@@ -160,7 +98,7 @@ class CosmosSDKEnv(gym.Env):
         self.action_pipe = open(self.action_pipe, "w")
         self.action_data = open(self.action_data, "w")
         # 5. get initial state
-        self.readqueue.reset(self.process.stdout)
+        self.readqueue.open(self.process.stdout)
         self._coverage = 0.0
         self._panic = ""
         self.state, _, result = self._parse_output(collect_reward=False)
