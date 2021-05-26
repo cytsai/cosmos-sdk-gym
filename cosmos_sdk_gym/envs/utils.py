@@ -17,7 +17,7 @@ class StateDict(defaultdict):
         elif self.verbose:
             print("NEW STATE", state)
 
-        self[state] = index = len(self)
+        self[state] = index = len(self) + 1
         with open(self.fn, 'w') as f:
             json.dump(self, f, indent=2)
         return index

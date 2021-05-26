@@ -6,7 +6,7 @@ import numpy as np
 import gym
 from gym import spaces
 from gym.utils import seeding
-from utils import StateDict, ReadQueue
+from cosmos_sdk_gym.envs.utils import StateDict, ReadQueue
 
 
 class CosmosSDKEnv(gym.Env):
@@ -25,13 +25,13 @@ class CosmosSDKEnv(gym.Env):
         self.action_pipe = None
         self.action_data = None
         self.action_space = spaces.Box(0.0, self.action_max, (1,), self.dtype)
-        self.observation_space = spaces.Discrete(256)
+        self.observation_space = spaces.Tuple((spaces.Discrete(255), spaces.Box(0, np.inf, (1,), self.dtype)))
         self.statedict = StateDict()
         self.readqueue = ReadQueue()
         atexit.register(lambda: self.close())
 
     def _parse_output(self, collect_reward=True):
-        state = self.observation_space.n - 1
+        _state = 0
         reward = 0.0
         result = ""
         while True:
@@ -44,8 +44,8 @@ class CosmosSDKEnv(gym.Env):
                 reward = (coverage - self._coverage)
                 self._coverage = coverage
             elif line.startswith("STATE"):
-                self._range, state = line.lstrip("STATE ").split()
-                self._range, state = int(self._range), self.statedict[state] # + self._range]
+                self._range, _state = line.lstrip("STATE ").split()
+                self._range, _state = int(self._range), self.statedict[_state]
                 break
             elif line.startswith("ACTION"):
                 assert eval(line.lstrip("ACTION ")) == eval(self._action[:-1])
@@ -54,7 +54,7 @@ class CosmosSDKEnv(gym.Env):
                 break
             elif line.startswith("panic") and not self._panic:
                 self._panic = line
-        return state, reward, result
+        return (_state, np.array([np.log10(self._range + 1, dtype=self.dtype)])), reward, result
 
     def _write_result(self, result):
         self.action_data.write("=" * 80 + '\n')
@@ -147,4 +147,6 @@ if __name__ == "__main__":
             state, reward, done, _ = env.step(action)
         if done:
             break
+        else:
+            assert state[0] != 0
     env.close()
