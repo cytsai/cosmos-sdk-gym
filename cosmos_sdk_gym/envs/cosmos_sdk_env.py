@@ -12,10 +12,9 @@ from cosmos_sdk_gym.envs.utils import StateDict, ReadQueue
 class CosmosSDKEnv(gym.Env):
     metadata = {'render.modes': ['human']}
     dtype = np.float32
-    action_max = np.nextafter(dtype(1.0), dtype(0.0))
 
     def __init__(self, env_config={}):
-        _env_config = {"sdk_path":"/home/cytsai/research/icf/cosmos-sdk", "sdk_config":"-NumBlocks=2 -BlockSize=100", "verbose":False}
+        _env_config = {"sdk_path":"/home/cytsai/research/icf/cosmos-sdk", "sdk_config":"-NumBlocks=50 -BlockSize=20", "verbose":False}
         _env_config.update(env_config)
         self._seed = 42
         self.sdk_path = _env_config["sdk_path"]
@@ -24,7 +23,7 @@ class CosmosSDKEnv(gym.Env):
         self.process = None
         self.action_pipe = None
         self.action_data = None
-        self.action_space = spaces.Box(0.0, self.action_max, (1,), self.dtype)
+        self.action_space = spaces.Discrete(256)
         self.observation_space = spaces.Tuple((spaces.Discrete(255), spaces.Box(0, np.inf, (1,), self.dtype)))
         self.statedict = StateDict()
         self.readqueue = ReadQueue()
@@ -41,7 +40,7 @@ class CosmosSDKEnv(gym.Env):
             if line.startswith("COVERAGE") and collect_reward:
                 coverage = float(line.lstrip("COVERAGE "))
                 assert coverage >= self._coverage
-                reward = (coverage - self._coverage)
+                reward = (coverage - self._coverage) #* (1.0 + coverage)
                 self._coverage = coverage
             elif line.startswith("STATE"):
                 self._range, _state = line.lstrip("STATE ").split()
@@ -60,7 +59,7 @@ class CosmosSDKEnv(gym.Env):
         self.action_data.write("=" * 80 + '\n')
         self.action_data.write(' '.join(self.process.args).replace(".pipe", ".data") + '\n')
         self.action_data.write("COVERAGE " + str(self._coverage) + '\n')
-        self.action_data.write(result + ' ' + self._panic + '\n')
+        self.action_data.write((result + ' ' + self._panic).strip() + '\n')
 
     def seed(self, seed=None):
         self.action_space.seed(seed)
@@ -100,6 +99,7 @@ class CosmosSDKEnv(gym.Env):
         # 5. get initial state
         self.readqueue.open(self.process.stdout)
         self._coverage = 0.0
+        self._range = 0
         self._panic = ""
         self.state, _, result = self._parse_output(collect_reward=False)
         assert not result
@@ -117,7 +117,7 @@ class CosmosSDKEnv(gym.Env):
         return self.state, reward, done, {}
 
     def step(self, action):
-        action = action[0]
+        action /= self.action_space.n
         if self._range > 0:
             action = int(self._range * action)
             assert 0 <= action < self._range
@@ -136,17 +136,19 @@ if __name__ == "__main__":
     else:
         guide = None
 
-    env = CosmosSDKEnv({"verbose": True})
-    env.reset()
-    while True:
-        if guide:
-            line = guide.readline()
-            state, reward, done, _ = env._step(line)
-        else:
-            action = env.action_space.sample()
-            state, reward, done, _ = env.step(action)
-        if done:
-            break
-        else:
-            assert state[0] != 0
+    env = CosmosSDKEnv() #{"verbose": True})
+    for _ in range(1):
+        env.reset()
+        while True:
+            if guide:
+                line = guide.readline()
+                state, reward, done, _ = env._step(line)
+            else:
+                action = env.action_space.sample()
+                state, reward, done, _ = env.step(action)
+            if done:
+                print(env._coverage)
+                break
+            else:
+                assert state[0] != 0
     env.close()
