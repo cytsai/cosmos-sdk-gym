@@ -26,7 +26,7 @@ class CosmosSDKEnv(gym.Env):
         self.action_space = spaces.Discrete(256)
         self.observation_space = spaces.Tuple((spaces.Discrete(255), spaces.Box(0, np.inf, (1,), self.dtype)))
         self.statedict = StateDict()
-        self.readqueue = ReadQueue()
+        self.readqueue = ReadQueue(bypass=True)
         atexit.register(lambda: self.close())
 
     def _parse_output(self, collect_reward=True):
@@ -43,7 +43,7 @@ class CosmosSDKEnv(gym.Env):
                 reward = (coverage - self._coverage) #* (1.0 + coverage)
                 self._coverage = coverage
             elif line.startswith("STATE"):
-                self._range, _state = line.lstrip("STATE ").split()
+                self._range, _state = line.lstrip("STATE ").split()[:2] # TODO
                 self._range, _state = int(self._range), self.statedict[_state]
                 break
             elif line.startswith("ACTION"):
@@ -92,7 +92,7 @@ class CosmosSDKEnv(gym.Env):
         # 3. launch simulation
         args  = "go test ./simapp/ -run TestFullAppSimulation -Enabled -Commit -v -cover -coverpkg=./... ".split()
         args += self.sdk_config.split() + [f"-Seed={self._seed}", f"-Guide={self.action_pipe}"]
-        self.process = subprocess.Popen(args, cwd=self.sdk_path, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=0)
+        self.process = subprocess.Popen(args, cwd=self.sdk_path, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=-1)
         # 4. open new guide files
         self.action_pipe = open(self.action_pipe, "w")
         self.action_data = open(self.action_data, "w")
@@ -137,8 +137,9 @@ if __name__ == "__main__":
         guide = None
 
     env = CosmosSDKEnv() #{"verbose": True})
-    for _ in range(1):
+    for i in range(1):
         env.reset()
+        env.seed(i)
         while True:
             if guide:
                 line = guide.readline()

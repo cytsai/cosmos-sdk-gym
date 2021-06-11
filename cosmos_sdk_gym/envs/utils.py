@@ -31,7 +31,8 @@ class StateDict(defaultdict):
 
 
 class ReadQueue:
-    def __init__(self):
+    def __init__(self, bypass=False):
+        self.bypass = bypass
         self.source = None
         self.queue = None
         self.thread = None
@@ -56,13 +57,17 @@ class ReadQueue:
             except:
                 pass
         self.source = source
-        self.queue = queue.Queue()
-        self.thread = threading.Thread(target=_readline, args=(source, self.queue), daemon=True)
-        self.thread.start()
+        if not self.bypass:
+            self.queue = queue.Queue()
+            self.thread = threading.Thread(target=_readline, args=(source, self.queue), daemon=True)
+            self.thread.start()
 
     def readline(self, timeout=5):
-        try:
-            line = self.queue.get(timeout=timeout)
-        except:
-            line = "TIMEOUT"
+        if self.bypass:
+            line = self.source.readline().decode("utf-8").strip()
+        else:
+            try:
+                line = self.queue.get(timeout=timeout)
+            except:
+                line = "TIMEOUT"
         return line
