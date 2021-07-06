@@ -10,16 +10,13 @@ from cosmos_sdk_gym.envs.utils import StateDict, ReadQueue
 
 
 class CosmosSDKEnv(gym.Env):
-    metadata = {'render.modes': ['human']}
+    metadata = {"render.modes": ["human"]}
+    sdk_path = "/home/cytsai/research/icf/cosmos-sdk"
     dtype = np.float32
 
     def __init__(self, env_config={}):
-        _env_config = {"sdk_path":"/home/cytsai/research/icf/cosmos-sdk", "sdk_config":"-NumBlocks=50 -BlockSize=20", "verbose":False}
-        _env_config.update(env_config)
         self._seed = 42
-        self.sdk_path = _env_config["sdk_path"]
-        self.sdk_config = _env_config["sdk_config"]
-        self.verbose = _env_config["verbose"]
+        self.verbose = False
         self.process = None
         self.action_pipe = None
         self.action_data = None
@@ -43,31 +40,33 @@ class CosmosSDKEnv(gym.Env):
                 reward = (coverage - self._coverage) #* (1.0 + coverage)
                 self._coverage = coverage
             elif line.startswith("STATE"):
-                self._range, _state = line.lstrip("STATE ").split()[:2] # TODO
+                self._range, _state = line.lstrip("STATE ").split()
                 self._range, _state = int(self._range), self.statedict[_state]
                 break
             elif line.startswith("ACTION"):
-                assert eval(line.lstrip("ACTION ")) == eval(self._action[:-1])
+                assert eval(line.lstrip("ACTION ")) == eval(self._action)
             elif line.startswith(("PASS", "FAIL", "TIMEOUT")):
                 result = line.split()[0]
                 break
             elif line.startswith("panic") and not self._panic:
                 self._panic = line
+                result = "FAIL"
+                break
         return (_state, np.array([np.log10(self._range + 1, dtype=self.dtype)])), reward, result
 
     def _write_result(self, result):
-        self.action_data.write("=" * 80 + '\n')
+        self.action_data.write('=' * 80 + '\n')
         self.action_data.write(' '.join(self.process.args).replace(".pipe", ".data") + '\n')
         self.action_data.write("COVERAGE " + str(self._coverage) + '\n')
         self.action_data.write((result + ' ' + self._panic).strip() + '\n')
 
     def seed(self, seed=None):
+        np.random.seed(seed)
         self.action_space.seed(seed)
         self._seed = seeding.create_seed(seed)
         return [self._seed]
 
     def close(self):
-        self.readqueue.close()
         if self.action_pipe:
             self.action_pipe.close()
             os.remove(self.action_pipe.name)
@@ -76,6 +75,9 @@ class CosmosSDKEnv(gym.Env):
             self.action_data.close()
             self.action_data = None
         if self.process:
+            while self.process.poll() is None:
+                self.readqueue.readline()
+            self.readqueue.close()
             self.process.terminate()
             self.process = None
 
@@ -90,9 +92,9 @@ class CosmosSDKEnv(gym.Env):
         self.action_data = os.path.join(fp, fn+".data")
         os.mkfifo(self.action_pipe)
         # 3. launch simulation
-        args  = "go test ./simapp/ -run TestFullAppSimulation -Enabled -Commit -v -cover -coverpkg=./... ".split()
-        args += self.sdk_config.split() + [f"-Seed={self._seed}", f"-Guide={self.action_pipe}"]
-        self.process = subprocess.Popen(args, cwd=self.sdk_path, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=-1)
+        #args = f"go test ./simapp/ -v -coverpkg=./... -run=TestFullAppSimulation -Enabled -Commit -NumBlocks={50} -BlockSize={20} -Seed={self._seed} -Guide={self.action_pipe}"
+        args = f"./simapp.test -test.run=TestFullAppSimulation -Enabled -Commit -NumBlocks={50} -BlockSize={20} -Seed={self._seed} -Guide={self.action_pipe}"
+        self.process = subprocess.Popen(args.split(), cwd=self.sdk_path, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=-1)
         # 4. open new guide files
         self.action_pipe = open(self.action_pipe, "w")
         self.action_data = open(self.action_data, "w")
@@ -123,9 +125,9 @@ class CosmosSDKEnv(gym.Env):
             assert 0 <= action < self._range
         else:
             assert 0.0 <= action < 1.0
-        return self._step(str(action) + '\n')
+        return self._step(str(action) + ',0\n')
 
-    def render(self, mode='human'):
+    def render(self, mode="human"):
         print(self.state)
 
 
@@ -136,10 +138,10 @@ if __name__ == "__main__":
     else:
         guide = None
 
-    env = CosmosSDKEnv() #{"verbose": True})
-    for i in range(1):
-        env.reset()
+    env = CosmosSDKEnv()
+    for i in range(10):
         env.seed(i)
+        env.reset()
         while True:
             if guide:
                 line = guide.readline()
@@ -147,6 +149,8 @@ if __name__ == "__main__":
             else:
                 action = env.action_space.sample()
                 state, reward, done, _ = env.step(action)
+                #line = f"{np.random.randint(env._range) if env._range > 0 else np.random.rand()},0\n"
+                #state, reward, done, _ = env._step(line)
             if done:
                 print(env._coverage)
                 break
