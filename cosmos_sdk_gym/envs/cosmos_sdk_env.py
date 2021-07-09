@@ -14,9 +14,9 @@ class CosmosSDKEnv(gym.Env):
     sdk_path = "/home/cytsai/research/icf/cosmos-sdk"
     dtype = np.float32
 
-    def __init__(self, env_config={}):
+    def __init__(self, verbose=False):
         self._seed = 42
-        self.verbose = False
+        self.verbose = verbose
         self.process = None
         self.action_pipe = None
         self.action_data = None
@@ -125,7 +125,7 @@ class CosmosSDKEnv(gym.Env):
             assert 0 <= action < self._range
         else:
             assert 0.0 <= action < 1.0
-        return self._step(str(action) + ',0\n')
+        return self._step(str(action) + '\n')
 
     def render(self, mode="human"):
         print(self.state)
@@ -149,7 +149,7 @@ if __name__ == "__main__":
             else:
                 action = env.action_space.sample()
                 state, reward, done, _ = env.step(action)
-                #line = f"{np.random.randint(env._range) if env._range > 0 else np.random.rand()},0\n"
+                #line = f"{np.random.randint(env._range) if env._range > 0 else np.random.rand()}\n"
                 #state, reward, done, _ = env._step(line)
             if done:
                 print(env._coverage)

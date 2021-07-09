@@ -9,8 +9,6 @@ bst:
         num_workers: 8
         num_gpus: 0
         #model:
-        #    fcnet_activation: swish
-        #    fcnet_hiddens: [32, 32]
         #    use_lstm: True
         #    lstm_use_prev_action: True
         evaluation_interval: 5
