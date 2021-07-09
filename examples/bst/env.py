@@ -1,7 +1,9 @@
 import os
 import subprocess
+import uuid
 import atexit
 import numpy as np
+import re
 import gym
 from gym import spaces
 from gym.utils import seeding
@@ -10,23 +12,26 @@ from cosmos_sdk_gym.envs.utils import StateDict
 
 class BSTEnv(gym.Env):
     metadata = {'render.modes': ['human']}
-    dtype = np.float32
-    action_max = np.nextafter(dtype(1.0), dtype(0.0))
 
-    def __init__(self, env_config={}):
+    def __init__(self, training=True, verbose=False):
         self._seed = 42
-        self.verbose = False
+        self.training = training
+        self.verbose = verbose
         self.process = None
-        self.action_space = spaces.Discrete(32)
-        #self.action_space = spaces.Box(0.0, self.action_max, (1,), self.dtype)
+        self.action_space = spaces.Discrete(31)
         self.observation_space = spaces.Discrete(32)
-        #self.observation_space = spaces.Box(-1, 1, (1,), self.dtype)
         self.statedict = StateDict()
-        atexit.register(lambda: self.close())
+
+        os.makedirs("log", exist_ok=True)
+        self.log = open("log/" + uuid.uuid4().hex + (".train" if training else ".eval"), 'w')
+        def _close():
+            self.log.close()
+            self.close()
+        atexit.register(lambda: _close())
 
     def _parse_output(self):
         state = 0
-        result = ""
+        tree = ""
         while True:
             line = self.process.stdout.readline().strip()
             if self.verbose and line.startswith(("STATE", "ACTION", "DONE")):
@@ -37,10 +42,9 @@ class BSTEnv(gym.Env):
             elif line.startswith("ACTION"):
                 assert np.isclose(float(line.lstrip("ACTION ")), self._action)
             elif line.startswith("DONE"):
-                result = line.lstrip("DONE ")
+                tree = line.lstrip("DONE ")
                 break
-        return state, result
-        #return np.array([state / 16.0], dtype=self.dtype), result
+        return state, tree
 
     def seed(self, seed=None):
         self.action_space.seed(seed)
@@ -49,41 +53,38 @@ class BSTEnv(gym.Env):
 
     def close(self):
         if self.process:
-            while self.process.poll() is None:
-                self.process.stdout.readline()
+            #while self.process.poll() is None:
+            #    self.process.stdout.readline()
             self.process.terminate()
             self.process = None
 
     def reset(self):
         self.close()
-        args = "./bst"
-        self.process = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
-        self.state, result = self._parse_output()
-        assert not result
+        args = "./tree 4 0.5"
+        self.process = subprocess.Popen(args.split(), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
+        self.state, tree = self._parse_output()
+        assert not tree
         return self.state
 
-    @staticmethod
-    def reward(result):
-        array = result.replace('(','').replace(')','').split(',')
-        array = [int(n) for n in array if n]
-        if len(array) <= 1:
-            return 0.0
-        if not all(array[i] < array[i+1] for i in range(len(array) - 1)):
-            return -1.0
-        else:
-            #print(result)
+    def reward(self, tree):
+        array = [int(n) for n in re.findall(r'\d+', tree)]
+        assert array
+        if len(array) == 1:
+            return 0.0 if self.training else 1.0
+        elif all(array[i] < array[i+1] for i in range(len(array) - 1)):
+            self.log.write(tree + '\n')
             return 1.0
+        else:
+            return -1.0 if self.training else 0.0
 
     def step(self, action):
-        #action = action[0]
         self._action = action
         self.process.stdin.write(str(action) + '\n')
         self.process.stdin.flush()
-        self.state, result = self._parse_output()
-        done = len(result) > 0
+        self.state, tree = self._parse_output()
+        done = len(tree) > 0
         if done:
-            #print(result)
-            reward = self.reward(result)
+            reward = self.reward(tree)
         else:
             reward = 0.0
         return self.state, reward, done, {}
