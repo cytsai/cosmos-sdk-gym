@@ -37,7 +37,7 @@ class CosmosSDKEnv(gym.Env):
             if line.startswith("COVERAGE") and collect_reward:
                 coverage = float(line.lstrip("COVERAGE "))
                 assert coverage >= self._coverage
-                reward = (coverage - self._coverage) #* (1.0 + coverage)
+                reward = (coverage - self._coverage)
                 self._coverage = coverage
             elif line.startswith("STATE"):
                 self._range, _state = line.lstrip("STATE ").split()
@@ -119,6 +119,8 @@ class CosmosSDKEnv(gym.Env):
         return self.state, reward, done, {}
 
     def step(self, action):
+        #line = f"{np.random.randint(self._range) if self._range > 0 else np.random.rand()}\n"
+        #return self._step(line)
         action /= self.action_space.n
         if self._range > 0:
             action = int(self._range * action)
@@ -139,8 +141,9 @@ if __name__ == "__main__":
         guide = None
 
     env = CosmosSDKEnv()
-    for i in range(10):
-        env.seed(i)
+    for i in range(25):
+        if not guide:
+            env.seed(i)
         env.reset()
         while True:
             if guide:
@@ -156,4 +159,6 @@ if __name__ == "__main__":
                 break
             else:
                 assert state[0] != 0
+        if guide:
+            break
     env.close()

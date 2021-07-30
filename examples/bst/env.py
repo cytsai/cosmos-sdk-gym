@@ -70,12 +70,12 @@ class BSTEnv(gym.Env):
         array = [int(n) for n in re.findall(r'\d+', tree)]
         assert array
         if len(array) == 1:
-            return 0.0 if self.training else 1.0
+            return 0.0 #if self.training else 1.0
         elif all(array[i] < array[i+1] for i in range(len(array) - 1)):
             self.log.write(tree + '\n')
-            return 1.0
+            return 1.0 #if not self.training else (len(array) - 1)
         else:
-            return -1.0 if self.training else 0.0
+            return 0.0 #if not self.training else -1.0
 
     def step(self, action):
         self._action = action

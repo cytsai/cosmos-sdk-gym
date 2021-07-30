@@ -11,9 +11,8 @@ bst:
         #model:
         #    use_lstm: True
         #    lstm_use_prev_action: True
-        evaluation_interval: 5
-        evaluation_num_workers: 1
-        evaluation_config:
-            env_config:
-                training: False
-            explore: False
+        #evaluation_interval: 5
+        #evaluation_num_workers: 1
+        #evaluation_config:
+            #env_config:
+                #training: False
