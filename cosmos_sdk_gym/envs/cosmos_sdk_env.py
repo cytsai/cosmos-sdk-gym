@@ -13,6 +13,7 @@ class CosmosSDKEnv(gym.Env):
     metadata = {"render.modes": ["human"]}
     sdk_path = "/home/cytsai/research/icf/cosmos-sdk"
     dtype = np.float32
+    #action_max = np.nextafter(dtype(1.0), dtype(0.0))
 
     def __init__(self, verbose=False):
         self._seed = 42
@@ -21,6 +22,7 @@ class CosmosSDKEnv(gym.Env):
         self.action_pipe = None
         self.action_data = None
         self.action_space = spaces.Discrete(256)
+        #self.action_space = spaces.Box(0.0, self.action_max, (1,), self.dtype)
         self.observation_space = spaces.Tuple((spaces.Discrete(255), spaces.Box(0, np.inf, (1,), self.dtype)))
         self.statedict = StateDict()
         self.readqueue = ReadQueue(bypass=True)
