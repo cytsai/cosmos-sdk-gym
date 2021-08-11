@@ -1,0 +1,17 @@
+helios:
+    env: env.CosmosSDKEnv
+    run: IMPALA
+    stop:
+        timesteps_total: 2500000
+    config:
+        #log_level: DEBUG
+        framework: torch
+        num_workers: 8
+        num_gpus: 1
+        replay_proportion: 1.0
+        replay_buffer_num_slots: 10000
+        model:
+            use_lstm: True
+            lstm_use_prev_reward: True
+            lstm_use_prev_action: True
+            max_seq_len: 50
