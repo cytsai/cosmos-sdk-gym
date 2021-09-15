@@ -2,6 +2,7 @@ import os
 import subprocess
 import uuid
 import atexit
+import time
 import numpy as np
 import gym
 from gym import spaces
@@ -55,11 +56,12 @@ class CosmosSDKEnv(gym.Env):
                 result = "FAIL"
                 break
         return (_state, np.array([np.log10(self._range + 1, dtype=self.dtype)])), reward, result
+        #return (0, np.zeros(1, dtype=self.dtype)), reward, result
 
     def _write_result(self, result):
         self.action_data.write('=' * 80 + '\n')
         self.action_data.write(' '.join(self.process.args).replace(".pipe", ".data") + '\n')
-        self.action_data.write("COVERAGE " + str(self._coverage) + '\n')
+        self.action_data.write(f"COVERAGE {self._coverage} STEPS {self._steps} TIMESTAMP {time.time()}\n")
         self.action_data.write((result + ' ' + self._panic).strip() + '\n')
 
     def seed(self, seed=None):
@@ -103,6 +105,7 @@ class CosmosSDKEnv(gym.Env):
         # 5. get initial state
         self.readqueue.open(self.process.stdout)
         self._coverage = 0.0
+        self._steps = 0
         self._range = 0
         self._panic = ""
         self.state, _, result = self._parse_output(collect_reward=False)
@@ -115,6 +118,9 @@ class CosmosSDKEnv(gym.Env):
         self.action_data.write(line)
         self.action_pipe.flush()
         self.state, reward, result = self._parse_output()
+        self._steps += 1
+        #if self._steps > 100000:
+        #    result = "TIMEOUT"
         done = len(result) > 0
         if done:
             self._write_result(result)
@@ -143,7 +149,7 @@ if __name__ == "__main__":
         guide = None
 
     env = CosmosSDKEnv()
-    for i in range(25):
+    for i in range(400):
         if not guide:
             env.seed(i)
         env.reset()

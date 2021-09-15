@@ -2,7 +2,7 @@ helios:
     env: env.CosmosSDKEnv
     run: IMPALA
     stop:
-        timesteps_total: 2500000
+        episodes_total: 400
     config:
         #log_level: DEBUG
         framework: torch
