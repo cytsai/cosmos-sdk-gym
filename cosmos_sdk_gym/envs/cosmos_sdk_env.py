@@ -115,12 +115,12 @@ class CosmosSDKEnv(gym.Env):
     def _step(self, line):
         self._action = line
         self.action_pipe.write(line)
-        self.action_data.write(line)
+        #self.action_data.write(line)
         self.action_pipe.flush()
         self.state, reward, result = self._parse_output()
         self._steps += 1
-        #if self._steps > 100000:
-        #    result = "TIMEOUT"
+        if self._steps > 100000:
+            result = "TIMEOUT"
         done = len(result) > 0
         if done:
             self._write_result(result)

@@ -44,10 +44,16 @@ type Tree struct {
 func randTree(depth int) *Tree {
 	tree := &Tree{value: guidedInt()}
 	if depth < TREE_DEPTH {
-		if rand.Float32() >= TREE_PRUNE {
+		var left, right bool
+		for done := false; !done; {
+			left  = rand.Float32() >= TREE_PRUNE
+			right = rand.Float32() >= TREE_PRUNE
+			done  = (depth > 0) || left || right
+		}
+		if left {
 			tree.left = randTree(depth + 1)
 		}
-		if rand.Float32() >= TREE_PRUNE {
+		if right {
 			tree.right = randTree(depth + 1)
 		}
 	}

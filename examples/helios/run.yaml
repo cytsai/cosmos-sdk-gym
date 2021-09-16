@@ -11,7 +11,8 @@ helios:
         replay_proportion: 1.0
         replay_buffer_num_slots: 10000
         model:
+            #fcnet_hiddens: [256, 256, 256]
             use_lstm: True
+            max_seq_len: 50
             lstm_use_prev_reward: True
             lstm_use_prev_action: True
-            max_seq_len: 50

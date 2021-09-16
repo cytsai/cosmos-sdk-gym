@@ -4,6 +4,7 @@ import uuid
 import atexit
 import numpy as np
 import re
+import time
 import gym
 from gym import spaces
 from gym.utils import seeding
@@ -20,6 +21,8 @@ class BSTEnv(gym.Env):
         self.process = None
         self.action_space = spaces.Discrete(31)
         self.observation_space = spaces.Discrete(32)
+        #self.observation_space = spaces.MultiDiscrete([2]*32)
+        self.bitmap = np.zeros(32, dtype=np.int8)
         self.statedict = StateDict()
 
         os.makedirs("log", exist_ok=True)
@@ -45,6 +48,8 @@ class BSTEnv(gym.Env):
                 tree = line.lstrip("DONE ")
                 break
         return state, tree
+        #self.bitmap[state] = 1
+        #return self.bitmap, tree
 
     def seed(self, seed=None):
         self.action_space.seed(seed)
@@ -53,8 +58,9 @@ class BSTEnv(gym.Env):
 
     def close(self):
         if self.process:
-            #while self.process.poll() is None:
-            #    self.process.stdout.readline()
+            self.process.stdin.close()
+            while self.process.poll() is None:
+                self.process.stdout.readline()
             self.process.terminate()
             self.process = None
 
@@ -62,19 +68,19 @@ class BSTEnv(gym.Env):
         self.close()
         args = "./tree 4 0.5"
         self.process = subprocess.Popen(args.split(), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
+        self.bitmap.fill(0)
         self.state, tree = self._parse_output()
         assert not tree
         return self.state
 
     def reward(self, tree):
         array = [int(n) for n in re.findall(r'\d+', tree)]
-        assert array
-        if len(array) == 1:
-            return 0.0 #if self.training else 1.0
-        elif all(array[i] < array[i+1] for i in range(len(array) - 1)):
-            self.log.write(tree + '\n')
+        assert len(array) > 1
+        if all(array[i] < array[i+1] for i in range(len(array) - 1)):
+            self.log.write(f"{time.time()} {len(array)}\n")
             return 1.0 #if not self.training else (len(array) - 1)
         else:
+            self.log.write(f"{time.time()} 0\n")
             return 0.0 #if not self.training else -1.0
 
     def step(self, action):
@@ -102,6 +108,4 @@ if __name__ == "__main__":
             state, reward, done, _ = env.step(action)
             if done:
                 break
-            else:
-                assert state != 0
     env.close()

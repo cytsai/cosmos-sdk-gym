@@ -1,18 +1,15 @@
 bst:
     env: env.BSTEnv
-    run: PPO
+    run: IMPALA
     stop:
-        timesteps_total: 1000000
+        episodes_total: 202000
     config:
         #log_level: DEBUG
         framework: torch
         num_workers: 8
         num_gpus: 0
-        #model:
-        #    use_lstm: True
-        #    lstm_use_prev_action: True
-        #evaluation_interval: 5
-        #evaluation_num_workers: 1
-        #evaluation_config:
-            #env_config:
-                #training: False
+        model:
+            #fcnet_hiddens: [256, 256, 256]
+            use_lstm: True
+            max_seq_len: 50
+            lstm_use_prev_action: True
