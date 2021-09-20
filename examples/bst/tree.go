@@ -71,5 +71,5 @@ func main() {
 	rand.Seed(time.Now().UnixNano())
 	fmt.Sscanf(os.Args[1], "%d", &TREE_DEPTH)
 	fmt.Sscanf(os.Args[2], "%f", &TREE_PRUNE)
-	fmt.Printf("DONE %s\n", sprintTree(randTree(0)))
+	for {fmt.Printf("DONE %s\n", sprintTree(randTree(0)))} // remove loop if not using FastBSTEnv
 }

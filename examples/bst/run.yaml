@@ -1,8 +1,8 @@
 bst:
-    env: env.BSTEnv
+    env: env.FastBSTEnv
     run: IMPALA
     stop:
-        episodes_total: 202000
+        episodes_total: 402000
     config:
         #log_level: DEBUG
         framework: torch

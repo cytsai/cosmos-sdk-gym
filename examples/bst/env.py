@@ -24,6 +24,7 @@ class BSTEnv(gym.Env):
         #self.observation_space = spaces.MultiDiscrete([2]*32)
         self.bitmap = np.zeros(32, dtype=np.int8)
         self.statedict = StateDict()
+        self.steps = -1
 
         os.makedirs("log", exist_ok=True)
         self.log = open("log/" + uuid.uuid4().hex + (".train" if training else ".eval"), 'w')
@@ -69,6 +70,7 @@ class BSTEnv(gym.Env):
         args = "./tree 4 0.5"
         self.process = subprocess.Popen(args.split(), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
         self.bitmap.fill(0)
+        self.steps = 0
         self.state, tree = self._parse_output()
         assert not tree
         return self.state
@@ -78,15 +80,16 @@ class BSTEnv(gym.Env):
         assert len(array) > 1
         if all(array[i] < array[i+1] for i in range(len(array) - 1)):
             self.log.write(f"{time.time()} {len(array)}\n")
-            return 1.0 #if not self.training else (len(array) - 1)
+            return 1.0
         else:
             self.log.write(f"{time.time()} 0\n")
-            return 0.0 #if not self.training else -1.0
+            return 0.0
 
     def step(self, action):
         self._action = action
         self.process.stdin.write(str(action) + '\n')
         self.process.stdin.flush()
+        self.steps += 1
         self.state, tree = self._parse_output()
         done = len(tree) > 0
         if done:
@@ -99,9 +102,24 @@ class BSTEnv(gym.Env):
         print(self.state)
 
 
+class FastBSTEnv(BSTEnv):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        args = "./tree 4 0.5"
+        self.process = subprocess.Popen(args.split(), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
+
+    def reset(self):
+        if self.steps != 0:
+            self.bitmap.fill(0)
+            self.steps = 0
+            self.state, tree = self._parse_output()
+            assert not tree
+        return self.state
+
+
 if __name__ == "__main__":
-    env = BSTEnv()
-    for i in range(100):
+    env = FastBSTEnv()
+    for _ in range(10000):
         env.reset()
         while True:
             action = env.action_space.sample()
