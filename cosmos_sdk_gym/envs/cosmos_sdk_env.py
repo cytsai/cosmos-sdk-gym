@@ -15,6 +15,8 @@ class CosmosSDKEnv(gym.Env):
     sdk_path = "/home/cytsai/research/icf/cosmos-sdk"
     dtype = np.float32
     #action_max = np.nextafter(dtype(1.0), dtype(0.0))
+    log_action = False
+    log_result = True
 
     def __init__(self, verbose=False):
         self._seed = 42
@@ -59,6 +61,8 @@ class CosmosSDKEnv(gym.Env):
         #return (0, np.zeros(1, dtype=self.dtype)), reward, result
 
     def _write_result(self, result):
+        if not self.log_result:
+            return
         self.action_data.write('=' * 80 + '\n')
         self.action_data.write(' '.join(self.process.args).replace(".pipe", ".data") + '\n')
         self.action_data.write(f"COVERAGE {self._coverage} STEPS {self._steps} TIMESTAMP {time.time()}\n")
@@ -93,7 +97,7 @@ class CosmosSDKEnv(gym.Env):
         fn = uuid.uuid4().hex
         os.makedirs(fp, exist_ok=True)
         self.action_pipe = os.path.join(fp, fn+".pipe")
-        self.action_data = os.path.join(fp, fn+".data")
+        self.action_data = os.path.join(fp, fn+".data") if self.log_action or self.log_result else None
         os.mkfifo(self.action_pipe)
         # 3. launch simulation
         #args = f"go test ./simapp/ -v -coverpkg=./... -run=TestFullAppSimulation -Enabled -Commit -NumBlocks={50} -BlockSize={20} -Seed={self._seed} -Guide={self.action_pipe}"
@@ -101,7 +105,7 @@ class CosmosSDKEnv(gym.Env):
         self.process = subprocess.Popen(args.split(), cwd=self.sdk_path, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=-1)
         # 4. open new guide files
         self.action_pipe = open(self.action_pipe, "w")
-        self.action_data = open(self.action_data, "w")
+        self.action_data = open(self.action_data, "w") if self.log_action or self.log_result else None
         # 5. get initial state
         self.readqueue.open(self.process.stdout)
         self._coverage = 0.0
@@ -115,8 +119,9 @@ class CosmosSDKEnv(gym.Env):
     def _step(self, line):
         self._action = line
         self.action_pipe.write(line)
-        #self.action_data.write(line)
         self.action_pipe.flush()
+        if self.log_action:
+            self.action_data.write(line)
         self.state, reward, result = self._parse_output()
         self._steps += 1
         if self._steps > 100000:
