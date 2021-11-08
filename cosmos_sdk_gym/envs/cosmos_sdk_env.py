@@ -16,7 +16,7 @@ class CosmosSDKEnv(gym.Env):
     dtype = np.float32
     #action_max = np.nextafter(dtype(1.0), dtype(0.0))
     log_action = False
-    log_result = True
+    log_result = False
 
     def __init__(self, verbose=False):
         self._seed = 42
@@ -32,7 +32,7 @@ class CosmosSDKEnv(gym.Env):
         atexit.register(lambda: self.close())
 
     def _parse_output(self, collect_reward=True):
-        _state = 0
+        _state = _hash = 0
         reward = 0.0
         result = ""
         while True:
@@ -45,7 +45,7 @@ class CosmosSDKEnv(gym.Env):
                 reward = (coverage - self._coverage)
                 self._coverage = coverage
             elif line.startswith("STATE"):
-                self._range, _state = line.lstrip("STATE ").split()
+                self._range, _state, _hash = line.lstrip("STATE ").split()
                 self._range, _state = int(self._range), self.statedict[_state]
                 break
             elif line.startswith("ACTION"):
@@ -57,8 +57,8 @@ class CosmosSDKEnv(gym.Env):
                 self._panic = line
                 result = "FAIL"
                 break
-        return (_state, np.array([np.log10(self._range + 1, dtype=self.dtype)])), reward, result
-        #return (0, np.zeros(1, dtype=self.dtype)), reward, result
+        #return (_state, np.array([np.log10(self._range + 1, dtype=self.dtype)])), reward, result
+        return _hash, reward, result
 
     def _write_result(self, result):
         if not self.log_result:
