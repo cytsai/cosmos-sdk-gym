@@ -24,7 +24,7 @@ class Cell(object):
         s += cntscore(self.times_chosen_since_new, 0.0, 0.5)
         s += cntscore(self.times_seen,             0.3, 0.5)
         return s"""
-        return (self.reward - self.times_chosen) / len(self.trajectory)
+        return self.reward * (0.9 ** self.times_chosen) / len(self.trajectory)
 
     def choose(self):
         self.times_chosen += 1

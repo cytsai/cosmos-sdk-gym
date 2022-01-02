@@ -16,7 +16,7 @@ class CosmosSDKEnv(gym.Env):
     dtype = np.float32
     #action_max = np.nextafter(dtype(1.0), dtype(0.0))
     log_action = False
-    log_result = False
+    log_result = True
 
     def __init__(self, verbose=False):
         self._seed = 42
@@ -26,13 +26,15 @@ class CosmosSDKEnv(gym.Env):
         self.action_data = None
         self.action_space = spaces.Discrete(256)
         #self.action_space = spaces.Box(0.0, self.action_max, (1,), self.dtype)
-        self.observation_space = spaces.Tuple((spaces.Discrete(255), spaces.Box(0, np.inf, (1,), self.dtype)))
+        self.observation_space = (spaces.Discrete(255), spaces.Box(0, np.inf, (1,), self.dtype)) + (spaces.Discrete(16),) * 64
+        self.observation_space = spaces.Tuple(self.observation_space)
         self.statedict = StateDict()
         self.readqueue = ReadQueue(bypass=True)
         atexit.register(lambda: self.close())
 
     def _parse_output(self, collect_reward=True):
-        _state = _hash = 0
+        _state = 0
+        _hash = '0,' * 64
         reward = 0.0
         result = ""
         while True:
@@ -57,8 +59,11 @@ class CosmosSDKEnv(gym.Env):
                 self._panic = line
                 result = "FAIL"
                 break
-        #return (_state, np.array([np.log10(self._range + 1, dtype=self.dtype)])), reward, result
-        return _hash, reward, result
+        assert '-1' not in _hash
+        state  = (_state, np.array([np.log10(self._range + 1, dtype=self.dtype)]))
+        state += tuple(int(i) for i in _hash.split(',')[:-1])
+        reward /= 71099
+        return state, reward, result
 
     def _write_result(self, result):
         if not self.log_result:
@@ -100,8 +105,7 @@ class CosmosSDKEnv(gym.Env):
         self.action_data = os.path.join(fp, fn+".data") if self.log_action or self.log_result else None
         os.mkfifo(self.action_pipe)
         # 3. launch simulation
-        #args = f"go test ./simapp/ -v -coverpkg=./... -run=TestFullAppSimulation -Enabled -Commit -NumBlocks={50} -BlockSize={20} -Seed={self._seed} -Guide={self.action_pipe}"
-        args = f"./simapp.test -test.run=TestFullAppSimulation -Enabled -Commit -NumBlocks={50} -BlockSize={20} -Seed={self._seed} -Guide={self.action_pipe}"
+        args = f"./simapp.test -test.run=TestFullAppSimulation -Enabled -Commit -NumBlocks=50 -BlockSize=20 -Seed={self._seed} -Guide={self.action_pipe}"
         self.process = subprocess.Popen(args.split(), cwd=self.sdk_path, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=-1)
         # 4. open new guide files
         self.action_pipe = open(self.action_pipe, "w")
